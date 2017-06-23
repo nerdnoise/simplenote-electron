@@ -1,13 +1,15 @@
 import React, { PropTypes } from 'react';
 import highlight from 'highlight.js';
-import marked from 'marked';
+import showdown from 'showdown';
 import { get, debounce, invoke } from 'lodash';
 import analytics from './analytics';
 import { viewExternalUrl } from './utils/url-utils';
 import NoteContentEditor from './note-content-editor';
 
 const saveDelay = 2000;
-const highlighter = code => highlight.highlightAuto( code ).value;
+
+const markdownConverter = new showdown.Converter();
+markdownConverter.setFlavor( 'github' );
 
 export default React.createClass( {
 
@@ -39,12 +41,19 @@ export default React.createClass( {
 		this.queueNoteSave.flush();
 	},
 
-	componentDidUpdate: function() {
-		const { note } = this.props;
+	componentDidUpdate: function( prevProps ) {
+		const { note, previewingMarkdown } = this.props;
 		const content = get( note, 'data.content', '' );
 		if ( this.isValidNote( note ) && content === '' ) {
 			// Let's focus the editor for new and empty notes
 			invoke( this, 'editor.focus' );
+		}
+
+		if (
+			( previewingMarkdown && ( prevProps.note !== note || prevProps.note.data.content !== note.data.content ) ) ||
+			( ! prevProps.previewingMarkdown && this.props.previewingMarkdown )
+		) {
+			this.updateMarkdown();
 		}
 	},
 
@@ -72,6 +81,49 @@ export default React.createClass( {
 		analytics.tracks.recordEvent( 'editor_note_edited' );
 	},
 
+	toggleTodo( index ) {
+		const { note } = this.props;
+		const { content } = note.data;
+		const todoPattern = /(\s*- \[)(o|x|\s)(\]\s)/ig;
+		let i = -1;
+
+		const toggled = content.replace( todoPattern, ( match, prefix, indicator, rest ) => {
+			i++;
+
+			if ( i < index || i > index ) {
+				return match;
+			}
+
+			return ( indicator === 'x' || indicator === 'X' )
+				? `${ prefix } ${ rest }`
+				: `${ prefix }x${ rest }`;
+		} );
+
+		this.saveNote( toggled );
+		this.updateMarkdown();
+	},
+
+	storePreview( ref ) {
+		this.previewNode = ref;
+	},
+
+	updateMarkdown() {
+		if ( ! this.previewNode ) {
+			return;
+		}
+
+		const node = this.previewNode;
+
+		node.innerHTML = markdownConverter.makeHtml( this.props.note.data.content );
+
+		const toggler = ( box, i ) => box.addEventListener( 'click', () => this.toggleTodo( i ), false );
+
+		node.querySelectorAll( '.task-list-item' ).forEach( toggler );
+		node.querySelectorAll( '.task-list-item p input[type="checkbox"]' ).forEach( toggler );
+
+		node.querySelectorAll( 'code' ).forEach( code => highlight.highlightBlock( code ) );
+	},
+
 	render: function() {
 		const {
 			filter,
@@ -86,8 +138,8 @@ export default React.createClass( {
 			<div className="note-detail">
 				{ previewingMarkdown && (
 					<div
+						ref={ this.storePreview }
 						className="note-detail-markdown theme-color-bg theme-color-fg"
-						dangerouslySetInnerHTML={ { __html: marked( content, { highlight: highlighter } ) } }
 						onClick={ this.onPreviewClick }
 						style={ divStyle }
 					/>
