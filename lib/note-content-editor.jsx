@@ -211,9 +211,7 @@ export default class NoteContentEditor extends React.Component {
 		return true;
 	};
 
-	changeContent = ( { target: { value } } ) => setTimeout( () => this.setState( {
-		content: value
-	}, () => this.props.onChangeContent( value ) ), 3000 );
+	changeContent = ( { target: { value } } ) => this.setState( { content: value }, () => this.props.onChangeContent( value ) );
 
 	render() {
 		return (
